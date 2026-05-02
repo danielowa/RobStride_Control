@@ -12,7 +12,6 @@ import sys
 import os
 import time
 import math
-import struct
 import threading
 import signal
 from typing import Optional
@@ -20,12 +19,12 @@ from typing import Optional
 # 尝试导入 SDK
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from robstride_dynamics import RobstrideBus, Motor, ParameterType, CommunicationType
+    from robstride_dynamics import RobstrideBus, Motor, ParameterType
 except ImportError:
     # 假设当前目录结构
     try:
         from bus import RobstrideBus, Motor
-        from protocol import ParameterType, CommunicationType
+        from protocol import ParameterType
     except ImportError as e:
         print(f"❌ 无法导入 SDK: {e}")
         sys.exit(1)
@@ -50,22 +49,6 @@ class PositionControllerMIT:
     def _signal_handler(self, signum, frame):
         self.stop_and_exit()
 
-    def _set_mode_raw(self, mode: int):
-        """
-        使用原始 transmit 发送模式切换指令，不等待回包 (避免connect超时)
-        """
-        print(f"⚙️ 切换模式 (Mode {mode}) - [Raw Transmit]")
-        device_id = self.bus.motors[self.motor_name].id
-        param_id, param_dtype, _ = ParameterType.MODE
-
-        # MODE 是 int8
-        value_buffer = struct.pack("<bBH", mode, 0, 0)
-        data = struct.pack("<HH", param_id, 0x00) + value_buffer
-
-        self.bus.transmit(CommunicationType.WRITE_PARAMETER, self.bus.host_id, device_id, data)
-        time.sleep(0.1) # 等待电机切换模式
-        print(f"✅ 模式切换指令已发送")
-
     def connect(self):
         print(f"🔍 正在连接 CAN 通道 {self.channel}...")
         
@@ -84,17 +67,15 @@ class PositionControllerMIT:
             self.bus.connect(handshake=True)
             
             with self.lock:
+                # 设置模式必须在 enable 之前（电机在启用状态下会拒绝模式切换）
+                print("⚙️ 切换到 MIT 模式 (Mode 0)...")
+                self.bus.write(self.motor_name, ParameterType.MODE, 0)
+
                 # 激活电机
                 print(f"⚡ 激活电机 ID: {self.motor_id} ...")
                 self.bus.enable(self.motor_name)
                 time.sleep(0.5)
 
-                # *********************
-                # *** 核心逻辑 ***
-                # *********************
-                # 1. 切换到 MIT 模式 (Mode 0)
-                self._set_mode_raw(0)
-                
                 # 2. 设置一个已知的、安全的初始目标
                 print("🏠 设置初始目标为 0.0 ...")
                 self.target_position = 0.0 # 设为 0 弧度

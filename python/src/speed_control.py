@@ -67,21 +67,27 @@ class SpeedController:
             self.bus = RobstrideBus(self.channel, motors, calibration)
             self.bus.connect(handshake=True)
             
+            # 设置模式必须在 enable 之前（电机在启用状态下会拒绝模式切换）
+            print("⚙️ 设置为速度控制模式 (Mode 2)...")
+            self.bus.write(self.motor_name, ParameterType.MODE, 2)
+
             # 激活电机
             print(f"⚡ 激活电机 ID: {self.motor_id} ...")
             self.bus.enable(self.motor_name)
-            time.sleep(0.5)
+            time.sleep(0.3)
 
-            # 设置为速度模式 (Mode 2)
-            print("⚙️ 设置为速度控制模式 (Mode 2)...")
-            self.bus.write(self.motor_name, ParameterType.MODE, 2)
-            
+            # 禁用 CAN 超时 — 速度模式下只发送 WRITE_PARAMETER 帧，
+            # 不发送 OPERATION_CONTROL 帧，默认的 CAN 超时可能会静默切断扭矩输出
+            print("⚙️ 禁用 CAN 超时...")
+            self.bus.write(self.motor_name, ParameterType.CAN_TIMEOUT, 0)
+
             # 初始化 PID 和限制
             print("⚙️ 写入控制参数...")
+            self.bus.write(self.motor_name, ParameterType.TORQUE_LIMIT, 10.0)
             self.bus.write(self.motor_name, ParameterType.VELOCITY_LIMIT, self.max_velocity)
             self.bus.write(self.motor_name, ParameterType.VELOCITY_KP, self.kp)
             self.bus.write(self.motor_name, ParameterType.VELOCITY_KI, self.ki)
-            
+
             # 归零目标
             self.bus.write(self.motor_name, ParameterType.VELOCITY_TARGET, 0.0)
             
